@@ -1,11 +1,11 @@
-from random import uniform, choice, randint, random
+from random import uniform, choice, randint, random, randrange
 from functools import reduce
 """
 Genetic algorithm model base class.
 """
 
 
-class GABaseModel:
+class GA_BaseModel:
     def __init__(self, config):
         self.population_size = config.population_size
         self.augmentations = config.augmentations
@@ -13,17 +13,33 @@ class GABaseModel:
         self.genome_len = len(config.augmentations)
         self.crossover_rate = config.crossover_rate
         self.elitism_selection_rate = config.elitism_selection_rate
+        self.augmentation_discrete_nums = config.augmentation_discrete_nums
         self.populations = []
 
-    def init_single_genome(self):  # Initialize a single genome randomly
+    def init_ineffective_genome(self):
         return [
-            uniform(*self.augmentation_ranges[i])
+            sum(self.augmentation_ranges[i]) / 2
             for i in range(self.genome_len)
         ]
 
-    def init_single_population(
-            self):  # Initialize a single population randomly
-        return [self.init_single_genome() for _ in range(self.population_size)]
+    def init_single_gene(self, aug_idx):  # Initialize a single gene randomly
+        discrete_num = self.augmentation_discrete_nums[aug_idx]
+        l, r = self.augmentation_ranges[aug_idx]
+        if discrete_num < 2:
+            return uniform(l, r)
+        step = (r - l) / (discrete_num - 1)
+        return randint(0, discrete_num - 1) * step + l
+
+    def init_single_genome(self):  # Initialize a single genome randomly
+        return [self.init_single_gene(i) for i in range(self.genome_len)]
+
+    def init_single_population(self, keep_one_ineffective=False):
+        # Initialize a single population randomly (it may keep one ineffective genome depending on hyperparam)
+        new_len = self.population_size - (1 if keep_one_ineffective else 0)
+        if keep_one_ineffective:
+            return [self.init_single_genome() for _ in range(new_len)
+                    ] + [self.init_ineffective_genome()]
+        return [self.init_single_genome() for _ in range(new_len)]
 
     def init_populations(self, dataset_len):  # Initialize populations randomly
         self.dataset_len = dataset_len
@@ -36,9 +52,8 @@ class GABaseModel:
         return parent1[:r] + parent2[r:]
 
     def mutate(self, genome, aug_idx):  # Mutate one augmentation of a genome
-        return genome[:aug_idx] + [
-            uniform(*self.augmentation_ranges[aug_idx])
-        ] + genome[aug_idx + 1:]
+        return genome[:aug_idx] + [self.init_single_gene(aug_idx)
+                                   ] + genome[aug_idx + 1:]
 
     def is_valid(self, genome):  # Check if a genome is valid
         return reduce(lambda x, y: x and y, [

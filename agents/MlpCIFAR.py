@@ -21,12 +21,6 @@ import matplotlib.pyplot as plt
 from agents.base import BaseAgent
 from datasets.augmentable import AugmentableDataset
 
-# from models.ga_models.ga_model import GAModel
-# from models.ga_models.ga_select_rw import GA_RWModel
-# from models.ga_models.ga_tournament import GA_Tournament
-from models.ga_models.ga_base import GABaseModel
-
-from models.dl_models.mlp import MLP
 from utils.transformations import Transformations
 
 from tensorboardX import SummaryWriter
@@ -37,12 +31,11 @@ class MlpCIFAR(BaseAgent):
         super().__init__(config)
 
         # define models
-        self.model = MLP()
+        self.model = self.import_model(config.dl_model)()
+        self.ga_model = self.import_model(config.ga_model)(config)
 
-        # self.ga_model = GAModel(config)
-        # self.ga_model = GA_RWModel(config)
-        # self.ga_model = GA_Tournament(config)
-        self.ga_model = GABaseModel(config)
+        if config.cuda:
+            self.model.to(f"cuda:{config.gpu_device}")
 
         # define data_loader
         self.batch_size = config.batch_size
@@ -62,8 +55,8 @@ class MlpCIFAR(BaseAgent):
 
         # augmentation strategies: Random, W-10, SENSEI
         self.aug_dataset_train = AugmentableDataset(
-            cifar_data.data[::4],
-            cifar_data.targets[::4],
+            cifar_data.data,
+            cifar_data.targets,
             self.transformations,
             pre_transform=pre_transform,
             shuffle=config.shuffle)
@@ -195,9 +188,9 @@ class MlpCIFAR(BaseAgent):
             batch_loss = []
             for i in range(len(x)):
                 inpt = x[i]
-                y_pred = self.model(inpt)
-                loss = self.loss_single(y_pred, y[i])
-                batch_loss.append(loss.detach().numpy())
+                y_pred = self.model(inpt).cuda()
+                loss = self.loss_single(y_pred, y[i].cuda())
+                batch_loss.append(loss.cpu().detach().numpy())
             f_array.append(np.stack(batch_loss))
         f = np.concatenate(f_array, axis=1).transpose()
         f_best = f.argmax(axis=1)
@@ -216,7 +209,7 @@ class MlpCIFAR(BaseAgent):
 
         for x, y in tqdm(self.data_loader):
             y_pred = self.model(x)
-            cur_loss = self.loss(y_pred, y)
+            cur_loss = self.loss(y_pred.cuda(), y.cuda())
             self.optimizer.zero_grad()
             cur_loss.backward()
             self.optimizer.step()
@@ -236,10 +229,10 @@ class MlpCIFAR(BaseAgent):
         correct = 0
 
         for x, y in tqdm(self.test_loader):
-            y_pred = self.model(x)
-            cur_loss = self.loss(y_pred, y)
+            y_pred = self.model(x).cuda()
+            cur_loss = self.loss(y_pred, y.cuda())
             pred = y_pred.max(1)[1]
-            correct += pred.eq(y).sum().item()
+            correct += pred.eq(y.cuda()).sum().item()
             test_loss += cur_loss.item()
 
         return test_loss, correct
@@ -291,3 +284,4 @@ class MlpCIFAR(BaseAgent):
                     correct += 1
 
         print(f"Robust accuracy: {correct / instances}")
+        self.summary_writer.add_scalar("robust accuracy", correct / instances)

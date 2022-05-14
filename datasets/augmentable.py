@@ -8,7 +8,7 @@ class AugmentableDataset(Dataset):
     def __init__(self,
                  images,
                  targets,
-                 transformations,
+                 transformations=None,
                  pre_transform=None,
                  post_transform=None,
                  shuffle=None):
@@ -30,6 +30,7 @@ class AugmentableDataset(Dataset):
         self.post_transform = post_transform
         self.shuffle = shuffle
         self.transforms = [None for _ in range(self.images.shape[0])]
+        self.best_genomes = [None for _ in range(self.images.shape[0])]
         self._eval_children = False
         self._children = None
 
@@ -48,8 +49,19 @@ class AugmentableDataset(Dataset):
                 tr_array.append(transform)
                 if self.post_transform != None:
                     tr_array.append(self.post_transform)
-                tr = transforms.Compose(tr_array)
-                instances.append(tr(self.images[idx]))
+
+                # this might be vulnerable (treating any TypeError as image type error)
+                # and assume that transform.toTensor is the first element of the array
+                try:
+                    tr = transforms.Compose(tr_array)
+                    instances.append(tr(self.images[idx]))
+                except TypeError as e:
+                    if self.pre_transform:
+                        tr_array.pop(0)
+                        tr = transforms.Compose(tr_array)
+                        instances.append(tr(self.images[idx]))
+                    else:
+                        raise e
             return instances, [
                 self.targets[idx] for _ in range(len(instances))
             ]
@@ -63,8 +75,19 @@ class AugmentableDataset(Dataset):
             if self.post_transform != None:
                 tr_array.append(self.post_transform)
             if len(tr_array) != 0:
-                tr = transforms.Compose(tr_array)
-                return tr(self.images[idx]), self.targets[idx]
+                # this might be vulnerable (treating any TypeError as image type error)
+                # and assume that transform.toTensor is the first element of the array
+                if self.pre_transform:
+                    try:
+                        tr = transforms.Compose(tr_array)
+                        return tr(self.images[idx]), self.targets[idx]
+                    except TypeError as e:
+                        if self.pre_transform:
+                            tr_array.pop(0)
+                            tr = transforms.Compose(tr_array)
+                            return tr(self.images[idx]), self.targets[idx]
+                        else:
+                            raise e
             else:
                 return self.images[idx], self.targets[idx]
 
@@ -76,6 +99,7 @@ class AugmentableDataset(Dataset):
         f_best (numpy.array, shape: (N, )): indices of the children that have the largest loss 
         """
         for i in range(f_best.shape[0]):
+            self.best_genomes[i] = self._children[i][f_best[i]]
             self.transforms[i] = self.transformations.get_transformation(
                 self._children[i][f_best[i]])
 

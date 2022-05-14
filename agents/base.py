@@ -2,6 +2,8 @@
 The Base Agent class, where all other agents inherit from, that contains definitions for all the necessary functions
 """
 import logging
+from models.dl_models import *
+from models.ga_models import *
 
 
 class BaseAgent:
@@ -62,3 +64,11 @@ class BaseAgent:
         :return:
         """
         raise NotImplementedError
+
+    def import_model(self, model):
+        """
+        Imports a model from a file
+        :param model: the model to be imported
+        :return:
+        """
+        return globals()[model]
